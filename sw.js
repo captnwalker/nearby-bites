@@ -1,4 +1,4 @@
-const CACHE = "nearby-bites-v2";
+const CACHE = "nearby-bites-v3";
 const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -15,7 +15,13 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (url.hostname.includes("overpass") || url.hostname.includes("nominatim") || url.hostname.includes("tile.openstreetmap")) {
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.hostname.includes("overpass") ||
+    url.hostname.includes("nominatim") ||
+    url.hostname.includes("photon.komoot") ||
+    url.hostname.includes("tile.openstreetmap")
+  ) {
     return;
   }
   event.respondWith(

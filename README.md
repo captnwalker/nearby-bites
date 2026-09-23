@@ -15,7 +15,7 @@ Places with no hours, no cuisine, and no phone are hidden.
 
 ## Stack
 
-Static HTML, CSS, and JavaScript. Leaflet + OSM tiles. Nominatim for city search. Deploy on Vercel Hobby or GitHub Pages.
+Static HTML, CSS, and JavaScript. Leaflet + OSM tiles. Nominatim (Photon fallback) for city search. A Vercel `/api/places` function proxies Overpass with a proper User-Agent and 4-hour CDN cache so public OSM servers are hit less often. The browser also keeps a 6-hour local cache and can show that list when Overpass is busy.
 
 ## Local
 
