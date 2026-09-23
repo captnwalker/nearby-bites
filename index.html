@@ -10,7 +10,8 @@
   <title>Nearby Bites</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/favicon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="./icons/favicon.svg" />
+  <link rel="icon" href="./icons/favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="./icons/icon-180.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="./css/app.css" />
 </head>
@@ -26,17 +27,20 @@
       </div>
       <button type="button" id="btn-saved" class="icon-btn" aria-pressed="false" title="Saved places">Saved</button>
     </header>
+
     <section class="map-wrap">
       <div id="map" role="application" aria-label="Map of nearby restaurants and cafes"></div>
       <button type="button" id="btn-locate" class="map-fab" title="Use my location">My location</button>
       <button type="button" id="btn-search-area" class="map-chip hidden">Search this area</button>
     </section>
+
     <section class="panel">
       <form id="search-form" class="search-form" autocomplete="off">
         <label class="sr-only" for="city">City or neighborhood</label>
         <input id="city" name="city" type="text" placeholder="City or neighborhood" enterkeyhint="search" />
         <button type="submit" class="primary">Go</button>
       </form>
+
       <div class="mode-row">
         <div class="segment" role="group" aria-label="Distance">
           <button type="button" id="mode-walk" class="seg on" data-miles="0.5">Short walk</button>
@@ -44,23 +48,29 @@
         </div>
         <button type="button" id="btn-more-dist" class="text-btn" aria-expanded="false">More</button>
       </div>
+
       <div id="dist-extra" class="dist-extra hidden">
         <label for="radius">Distance <span id="radius-label">0.5 mi</span></label>
         <input id="radius" type="range" min="0.25" max="5" step="0.25" value="0.5" />
       </div>
+
       <label class="filter-label" for="q">
         <span class="sr-only">Filter by name or cuisine</span>
         <input id="q" type="search" placeholder="Filter name or cuisine" />
       </label>
+
       <div class="list-head">
         <p id="status">Finding places near you…</p>
         <p id="place-label" class="muted"></p>
       </div>
+
       <div id="list" class="list"></div>
+      <button type="button" id="btn-retry" class="more hidden">Try again</button>
       <button type="button" id="btn-more" class="more hidden">Show more</button>
       <p class="attr">Places from OpenStreetMap. Hours and phones only when mapped. Missing hours show as Call.</p>
     </section>
   </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="./js/app.js"></script>
 </body>
