@@ -1,4 +1,4 @@
-const CACHE = "nearby-bites-v1";
+const CACHE = "nearby-bites-v2";
 const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
