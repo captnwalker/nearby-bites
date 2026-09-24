@@ -1,5 +1,10 @@
 {
   "cleanUrls": true,
+  "functions": {
+    "api/places.js": {
+      "maxDuration": 25
+    }
+  },
   "headers": [
     {
       "source": "/sw.js",
@@ -11,6 +16,12 @@
       "source": "/api/places",
       "headers": [
         { "key": "Cache-Control", "value": "public, s-maxage=14400, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/apple-touch-icon.png",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
       ]
     }
   ]

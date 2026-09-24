@@ -1,21 +1,16 @@
 const UPSTREAMS = [
   "https://overpass.private.coffee/api/interpreter",
-  "https://z.overpass-api.de/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
 ];
 
-const UA = "NearbyBites/1.0 (+https://github.com/captnwalker/nearby-bites)";
+const UA = "NearbyBites/1.1 (+https://github.com/captnwalker/nearby-bites)";
+const FETCH_MI = 3;
+const OUT_CAP = 80;
 
 function buildQuery(lat, lon, meters) {
-  return `[out:json][timeout:15][maxsize:1048576];
-(
-  node["amenity"="restaurant"](around:${meters},${lat},${lon});
-  node["amenity"="cafe"](around:${meters},${lat},${lon});
-  way["amenity"="restaurant"](around:${meters},${lat},${lon});
-  way["amenity"="cafe"](around:${meters},${lat},${lon});
-);
-out center tags;`;
+  return `[out:json][timeout:12][maxsize:524288];
+nwr["amenity"~"^(restaurant|cafe)$"](around:${meters},${lat},${lon});
+out center ${OUT_CAP} tags;`;
 }
 
 function looksFailed(status, text, json) {
@@ -55,7 +50,7 @@ async function askUpstream(url, query, timeoutMs) {
       json = null;
     }
     if (!res.ok || !json || looksFailed(res.status, text, json)) {
-      throw new Error(`upstream ${res.status}`);
+      throw new Error("upstream " + res.status);
     }
     return json;
   } finally {
@@ -87,21 +82,23 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const rLat = Math.round(lat * 1000) / 1000;
-  const rLon = Math.round(lon * 1000) / 1000;
-  const rMiles = Math.round(miles * 4) / 4;
-  const meters = Math.round(rMiles * 1609.344);
+  const rLat = Math.round(lat * 200) / 200;
+  const rLon = Math.round(lon * 200) / 200;
+  const fetchMiles = miles > FETCH_MI ? Math.round(miles * 4) / 4 : FETCH_MI;
+  const meters = Math.round(fetchMiles * 1609.344);
   const query = buildQuery(rLat, rLon, meters);
 
   let lastErr = "overpass busy";
   for (let i = 0; i < UPSTREAMS.length; i++) {
     try {
-      const data = await askUpstream(UPSTREAMS[i], query, i === 0 ? 16000 : 12000);
+      const data = await askUpstream(UPSTREAMS[i], query, i === 0 ? 10000 : 8000);
       res.setHeader("Cache-Control", "public, s-maxage=14400, stale-while-revalidate=86400");
       res.setHeader("X-Overpass-Source", UPSTREAMS[i]);
+      res.setHeader("X-Fetch-Miles", String(fetchMiles));
       res.status(200).json({
         elements: data.elements || [],
         osm3s: data.osm3s || null,
+        fetchMiles: fetchMiles,
       });
       return;
     } catch (err) {
@@ -109,6 +106,6 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Cache-Control", "public, s-maxage=90, stale-while-revalidate=30");
   res.status(503).json({ error: "map servers busy", detail: lastErr });
 };

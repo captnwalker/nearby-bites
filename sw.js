@@ -1,5 +1,5 @@
-const CACHE = "nearby-bites-v3";
-const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest"];
+const CACHE = "nearby-bites-v4";
+const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest", "./icons/icon-180.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

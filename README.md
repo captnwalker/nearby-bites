@@ -15,7 +15,7 @@ Places with no hours, no cuisine, and no phone are hidden.
 
 ## Stack
 
-Static HTML, CSS, and JavaScript. Leaflet + OSM tiles. Nominatim (Photon fallback) for city search. A Vercel `/api/places` function proxies Overpass with a proper User-Agent and 4-hour CDN cache so public OSM servers are hit less often. The browser also keeps a 6-hour local cache and can show that list when Overpass is busy.
+Static HTML, CSS, and JavaScript. Leaflet + OSM tiles. Nominatim (Photon fallback) for city search. A Vercel `/api/places` function is the only Overpass client: one preferred instance, one fallback, 25s max duration, named User-Agent, and a 4-hour CDN cache. Each load fetches a 3-mile circle (or the slider value if larger) so Short drive is instant after the first success. The phone filters that list down to the selected distance. Device cache is 6 hours, with a 2-minute pause after a miss so retries do not pile onto public servers.
 
 ## Local
 
