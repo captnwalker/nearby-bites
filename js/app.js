@@ -1,16 +1,13 @@
 (() => {
   const WALK_MI = 0.5;
   const DRIVE_MI = 3;
+  const FETCH_MI = 3;
   const PAGE = 25;
   const FAV_KEY = "nearby-bites-favs";
   const CACHE_KEY = "nearby-bites-place-cache";
+  const FAIL_KEY = "nearby-bites-fail-cache";
   const CACHE_MS = 6 * 60 * 60 * 1000;
-  const OVERPASS_URLS = [
-    "https://overpass.private.coffee/api/interpreter",
-    "https://z.overpass-api.de/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-  ];
+  const FAIL_MS = 2 * 60 * 1000;
   const NOMINATIM = "https://nominatim.openstreetmap.org/search";
   const PHOTON = "https://photon.komoot.io/api/";
   const $ = (id) => document.getElementById(id);
@@ -26,7 +23,7 @@
   const radiusLabel = $("radius-label");
   const distExtra = $("dist-extra");
   const state = {
-    lat: null, lon: null, label: "", miles: WALK_MI,
+    lat: null, lon: null, label: "", miles: WALK_MI, fetchedMiles: 0,
     places: [], filtered: [], shown: PAGE, markers: [],
     savedOnly: false, mapMoved: false, stale: false, inflight: 0,
   };
@@ -38,13 +35,15 @@
   }).addTo(map);
   map.setView([39.8283, -98.5795], 4);
   let youMarker = null;
-  function miToM(mi) { return mi * 1609.344; }
   function haversine(aLat, aLon, bLat, bLon) {
     const R = 3958.8;
     const dLat = ((bLat - aLat) * Math.PI) / 180;
     const dLon = ((bLon - aLon) * Math.PI) / 180;
     const s = Math.sin(dLat / 2) ** 2 + Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+  }
+  function fetchMilesFor(displayMiles) {
+    return displayMiles > FETCH_MI ? Math.round(Number(displayMiles) * 4) / 4 : FETCH_MI;
   }
   function loadFavs() { try { return JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); } catch { return []; } }
   function saveFavs(ids) { localStorage.setItem(FAV_KEY, JSON.stringify(ids)); }
@@ -76,24 +75,43 @@
     if (mi < 0.1) return Math.round(mi * 5280) + " ft";
     return mi.toFixed(mi < 1 ? 2 : 1) + " mi";
   }
-  function cacheKey(lat, lon, miles) {
-    return (Math.round(lat * 1000) / 1000).toFixed(3) + "|" + (Math.round(lon * 1000) / 1000).toFixed(3) + "|" + (Math.round(miles * 4) / 4).toFixed(2);
+  function cellKey(lat, lon, miles) {
+    return (Math.round(lat * 200) / 200).toFixed(3) + "|" + (Math.round(lon * 200) / 200).toFixed(3) + "|" + fetchMilesFor(miles).toFixed(2);
   }
   function readPlaceCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "{}"); } catch { return {}; } }
   function getCachedPlaces(lat, lon, miles) {
-    const hit = readPlaceCache()[cacheKey(lat, lon, miles)];
+    const hit = readPlaceCache()[cellKey(lat, lon, miles)];
     if (!hit || !Array.isArray(hit.places) || Date.now() - hit.savedAt > CACHE_MS * 4) return null;
     return hit;
   }
-  function setCachedPlaces(lat, lon, miles, places) {
+  function setCachedPlaces(lat, lon, miles, places, fetchedMiles) {
     try {
       const all = readPlaceCache();
-      all[cacheKey(lat, lon, miles)] = { places: places, savedAt: Date.now() };
+      all[cellKey(lat, lon, miles)] = { places: places, savedAt: Date.now(), fetchedMiles: fetchedMiles };
       const keys = Object.keys(all);
       if (keys.length > 40) {
         keys.sort(function(a, b) { return (all[a].savedAt || 0) - (all[b].savedAt || 0); }).slice(0, keys.length - 40).forEach(function(k) { delete all[k]; });
       }
       localStorage.setItem(CACHE_KEY, JSON.stringify(all));
+    } catch (e) {}
+  }
+  function readFailCache() { try { return JSON.parse(localStorage.getItem(FAIL_KEY) || "{}"); } catch { return {}; } }
+  function recentFail(lat, lon, miles) {
+    const hit = readFailCache()[cellKey(lat, lon, miles)];
+    return hit && Date.now() - hit < FAIL_MS;
+  }
+  function markFail(lat, lon, miles) {
+    try {
+      const all = readFailCache();
+      all[cellKey(lat, lon, miles)] = Date.now();
+      localStorage.setItem(FAIL_KEY, JSON.stringify(all));
+    } catch (e) {}
+  }
+  function clearFail(lat, lon, miles) {
+    try {
+      const all = readFailCache();
+      delete all[cellKey(lat, lon, miles)];
+      localStorage.setItem(FAIL_KEY, JSON.stringify(all));
     } catch (e) {}
   }
   function escapeHtml(s) {
@@ -108,7 +126,7 @@
   }
   function applyFilter() {
     const q = qInput.value.trim().toLowerCase();
-    let rows = state.places.filter(hasUsefulData);
+    let rows = state.places.filter(function(p) { return hasUsefulData(p) && p.miles <= state.miles + 0.02; });
     if (state.savedOnly) rows = rows.filter(function(p) { return isFav(p.id); });
     if (q) rows = rows.filter(function(p) { return p.name.toLowerCase().includes(q) || p.cuisine.toLowerCase().includes(q); });
     rows.sort(function(a, b) { return a.miles - b.miles; });
@@ -165,21 +183,6 @@
     setStatus(rows.length + " of " + state.filtered.length + (state.savedOnly ? " saved" : " nearby") + (state.stale ? " \u00b7 cached" : ""));
     placeLabel.textContent = state.label ? state.label + " \u00b7 " + state.miles + " mi" : state.miles + " mi";
   }
-  function buildQuery(lat, lon, miles) {
-    const r = Math.round(miToM(miles));
-    return "[out:json][timeout:15][maxsize:1048576];(" +
-      'node["amenity"="restaurant"](around:' + r + "," + lat + "," + lon + ");" +
-      'node["amenity"="cafe"](around:' + r + "," + lat + "," + lon + ");" +
-      'way["amenity"="restaurant"](around:' + r + "," + lat + "," + lon + ");" +
-      'way["amenity"="cafe"](around:' + r + "," + lat + "," + lon + ");" +
-      ");out center tags;";
-  }
-  function looksBusy(status, payload) {
-    if (status === 429 || status === 502 || status === 503 || status === 504 || status === 406) return true;
-    const remark = payload && typeof payload === "object" ? String(payload.remark || "") : "";
-    const text = (typeof payload === "string" ? payload : remark).toLowerCase();
-    return text.indexOf("rate_limited") >= 0 || text.indexOf("too many requests") >= 0 || text.indexOf("quota of your ip") >= 0 || text.indexOf("query timed out") >= 0 || text.indexOf("runtime error") >= 0;
-  }
   function parsePlaces(data, lat, lon) {
     const seen = new Set();
     const places = [];
@@ -215,41 +218,14 @@
       const text = await res.text();
       let json = null;
       try { json = JSON.parse(text); } catch (e) { json = null; }
-      if (!res.ok || looksBusy(res.status, json || text) || !json) throw new Error("HTTP " + res.status);
+      if (!res.ok || !json || json.error) throw new Error("HTTP " + res.status);
       return json;
     } finally { clearTimeout(timer); }
   }
-  async function fetchFromOverpass(url, query) {
-    return fetchJson(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: "data=" + encodeURIComponent(query),
-    }, 14000);
-  }
   async function fetchViaProxy(lat, lon, miles) {
-    const params = "lat=" + (Math.round(lat * 1000) / 1000) + "&lon=" + (Math.round(lon * 1000) / 1000) + "&m=" + (Math.round(miles * 4) / 4);
-    return fetchJson("/api/places?" + params, { headers: { Accept: "application/json" } }, 18000);
-  }
-  async function fetchPlaces(lat, lon, miles) {
-    const query = buildQuery(lat, lon, miles);
-    let data = null;
-    let lastErr = null;
-    try {
-      setStatus("Loading places\u2026");
-      data = await fetchViaProxy(lat, lon, miles);
-    } catch (err) { lastErr = err; }
-    if (!data) {
-      for (let i = 0; i < OVERPASS_URLS.length; i++) {
-        try {
-          setStatus(i === 0 ? "Asking OpenStreetMap\u2026" : "Trying another map server\u2026");
-          data = await fetchFromOverpass(OVERPASS_URLS[i], query);
-          lastErr = null;
-          break;
-        } catch (err) { lastErr = err; }
-      }
-    }
-    if (!data) throw lastErr || new Error("Overpass error");
-    return parsePlaces(data, lat, lon);
+    const need = fetchMilesFor(miles);
+    const params = "lat=" + (Math.round(lat * 200) / 200) + "&lon=" + (Math.round(lon * 200) / 200) + "&m=" + need;
+    return fetchJson("/api/places?" + params, { headers: { Accept: "application/json" } }, 24000);
   }
   async function reverseHint(lat, lon) {
     try {
@@ -276,51 +252,76 @@
     const p = feat.properties || {};
     return { lat: feat.geometry.coordinates[1], lon: feat.geometry.coordinates[0], label: [p.name, p.city || p.state || p.country].filter(Boolean).join(", ") };
   }
-  async function loadAt(lat, lon, label) {
+  function attachPlaces(places, lat, lon, fetchedMiles, stale) {
+    state.places = places.map(function(p) { return Object.assign({}, p, { miles: haversine(lat, lon, p.lat, p.lon) }); });
+    state.fetchedMiles = fetchedMiles;
+    state.stale = !!stale;
+    applyFilter();
+  }
+  async function loadAt(lat, lon, label, force) {
     const ticket = ++state.inflight;
-    state.lat = lat; state.lon = lon; state.label = label || ""; state.mapMoved = false; state.stale = false;
+    const need = fetchMilesFor(state.miles);
+    const haveCoverage = state.lat != null &&
+      haversine(state.lat, state.lon, lat, lon) < 0.08 &&
+      state.fetchedMiles >= need &&
+      state.places.length &&
+      !force;
+    state.lat = lat; state.lon = lon; state.label = label || state.label || ""; state.mapMoved = false;
     searchAreaBtn.classList.add("hidden");
     if (retryBtn) retryBtn.classList.add("hidden");
-    setStatus("Loading places\u2026");
-    listEl.innerHTML = "";
     if (youMarker) map.removeLayer(youMarker);
     youMarker = L.circleMarker([lat, lon], { radius: 7, color: "#1d4a36", fillColor: "#edf0e8", fillOpacity: 1, weight: 3 }).addTo(map);
     map.setView([lat, lon], state.miles <= 0.75 ? 15 : state.miles <= 2 ? 14 : 13);
+    if (haveCoverage) {
+      attachPlaces(state.places, lat, lon, state.fetchedMiles, state.stale);
+      return;
+    }
     const cached = getCachedPlaces(lat, lon, state.miles);
     const fresh = cached && Date.now() - cached.savedAt < CACHE_MS;
-    if (cached && fresh) {
-      state.places = cached.places.map(function(p) { return Object.assign({}, p, { miles: haversine(lat, lon, p.lat, p.lon) }); });
+    if (cached && fresh && !force) {
+      attachPlaces(cached.places, lat, lon, cached.fetchedMiles || need, false);
       if (!state.label) state.label = (await reverseHint(lat, lon)) || state.label;
-      if (ticket !== state.inflight) return;
-      applyFilter();
       return;
     }
     if (cached) {
-      state.places = cached.places.map(function(p) { return Object.assign({}, p, { miles: haversine(lat, lon, p.lat, p.lon) }); });
-      state.stale = true;
-      applyFilter();
+      attachPlaces(cached.places, lat, lon, cached.fetchedMiles || need, true);
       setStatus("Updating list\u2026");
+    } else {
+      setStatus("Loading places\u2026");
+      listEl.innerHTML = "";
+    }
+    if (!force && recentFail(lat, lon, state.miles) && cached) {
+      setStatus("Map servers were busy. Showing places saved on this device.");
+      if (retryBtn) retryBtn.classList.remove("hidden");
+      return;
+    }
+    if (!force && recentFail(lat, lon, state.miles) && !cached) {
+      setStatus("Map data servers are busy. Try again in a minute.");
+      if (retryBtn) retryBtn.classList.remove("hidden");
+      return;
     }
     try {
-      const places = await fetchPlaces(lat, lon, state.miles);
+      const data = await fetchViaProxy(lat, lon, state.miles);
       if (ticket !== state.inflight) return;
-      setCachedPlaces(lat, lon, state.miles, places);
-      state.places = places;
-      state.stale = false;
+      const places = parsePlaces(data, lat, lon);
+      const got = data.fetchMiles || need;
+      setCachedPlaces(lat, lon, state.miles, places, got);
+      clearFail(lat, lon, state.miles);
+      attachPlaces(places, lat, lon, got, false);
       if (!state.label) state.label = await reverseHint(lat, lon);
-      applyFilter();
       if (retryBtn) retryBtn.classList.add("hidden");
     } catch (err) {
       console.error(err);
       if (ticket !== state.inflight) return;
-      if (cached) {
+      markFail(lat, lon, state.miles);
+      if (cached || state.places.length) {
         state.stale = true;
         applyFilter();
         setStatus("Map servers busy. Showing places saved on this device.");
       } else {
         setStatus("Map data servers are busy. Try again in a minute.");
-        if (retryBtn) retryBtn.classList.remove("hidden");
       }
+      if (retryBtn) retryBtn.classList.remove("hidden");
     }
   }
   function useLocation() {
@@ -333,12 +334,21 @@
     );
   }
   function setMiles(mi) {
-    state.miles = Number(mi);
+    const next = Number(mi);
+    const prevNeed = fetchMilesFor(state.miles);
+    const nextNeed = fetchMilesFor(next);
+    state.miles = next;
     radiusInput.value = String(state.miles);
     radiusLabel.textContent = state.miles + " mi";
     $("mode-walk").classList.toggle("on", Math.abs(state.miles - WALK_MI) < 0.01);
     $("mode-drive").classList.toggle("on", Math.abs(state.miles - DRIVE_MI) < 0.01);
-    if (state.lat != null) loadAt(state.lat, state.lon, state.label);
+    if (state.lat == null) return;
+    if (nextNeed <= state.fetchedMiles || nextNeed <= prevNeed) {
+      map.setView([state.lat, state.lon], state.miles <= 0.75 ? 15 : state.miles <= 2 ? 14 : 13);
+      applyFilter();
+      return;
+    }
+    loadAt(state.lat, state.lon, state.label);
   }
   $("mode-walk").addEventListener("click", function() { setMiles(WALK_MI); });
   $("mode-drive").addEventListener("click", function() { setMiles(DRIVE_MI); });
@@ -362,7 +372,7 @@
   qInput.addEventListener("input", applyFilter);
   moreBtn.addEventListener("click", function() { state.shown += PAGE; renderList(); });
   if (retryBtn) retryBtn.addEventListener("click", function() {
-    if (state.lat != null) loadAt(state.lat, state.lon, state.label);
+    if (state.lat != null) loadAt(state.lat, state.lon, state.label, true);
     else useLocation();
   });
   $("btn-locate").addEventListener("click", useLocation);
