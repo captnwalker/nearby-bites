@@ -1,5 +1,5 @@
-const CACHE = "nearby-bites-v4";
-const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest", "./icons/icon-180.png", "./apple-touch-icon.png"];
+const CACHE = "nearby-bites-v5";
+const SHELL = ["./", "./index.html", "./css/app.css", "./js/app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -17,6 +17,9 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (
     url.pathname.startsWith("/api/") ||
+    url.pathname.endsWith(".png") ||
+    url.pathname.includes("apple-touch-icon") ||
+    url.pathname.endsWith(".webmanifest") ||
     url.hostname.includes("overpass") ||
     url.hostname.includes("nominatim") ||
     url.hostname.includes("photon.komoot") ||
