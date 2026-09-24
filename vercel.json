@@ -6,6 +6,9 @@
     }
   },
   "rewrites": [
+    { "source": "/icons/plate-180.png", "destination": "/api/touch-icon?s=180" },
+    { "source": "/icons/plate-192.png", "destination": "/api/touch-icon?s=192" },
+    { "source": "/icons/plate-512.png", "destination": "/api/touch-icon?s=512" },
     { "source": "/apple-touch-icon.png", "destination": "/api/touch-icon?s=180" },
     { "source": "/apple-touch-icon-precomposed.png", "destination": "/api/touch-icon?s=180" },
     { "source": "/apple-touch-icon-180x180.png", "destination": "/api/touch-icon?s=180" },
